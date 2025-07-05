@@ -1,0 +1,2065 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UWB Signal Prediction - Multi-Target Analysis</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/numeric@1.2.6/numeric.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="js/oil-water/model_output0_oil.js"></script>
+    <script src="js/oil-water/model_output1_oil.js"></script>
+    <script src="js/oil-water/model_output2_oil.js"></script>
+    <script src="js/pork/model_output0_prok.js"></script>
+    <script src="js/pork/model_output1_pork.js"></script>
+    <script src="js/pork/model_output2_pork.js"></script>
+    <script src="js/x_scaler.js"></script>
+    <script src="js/y_scaler.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #2c3e50;
+            font-size: 14px;
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        /* Header */
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 20px 0;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 28px;
+            font-weight: 700;
+            color: #667eea;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .nav-menu {
+            display: flex;
+            gap: 32px;
+            list-style: none;
+        }
+
+        .nav-menu a {
+            color: #2c3e50;
+            text-decoration: none;
+            font-weight: 600;
+            padding: 8px 16px;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .nav-menu a:hover {
+            background: #667eea;
+            color: white;
+        }
+
+        /* Main Container */
+        .main-container {
+            max-width: 1200px;
+            margin: 32px auto;
+            padding: 0 24px;
+            padding-bottom: 48px;
+        }
+
+        /* Target Selection */
+        .target-selection {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 32px;
+            margin-bottom: 32px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .target-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+            margin-top: 24px;
+        }
+
+        .target-card {
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            border-radius: 16px;
+            padding: 24px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .target-card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.15);
+        }
+
+        .target-card.selected {
+            border-color: #667eea;
+            background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%);
+        }
+
+        .target-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            display: block;
+        }
+
+        .target-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 8px;
+        }
+
+        .target-description {
+            color: #64748b;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        /* Signal Upload */
+        .signal-upload {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 32px;
+            margin-bottom: 32px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .upload-area {
+            border: 3px dashed #cbd5e1;
+            border-radius: 16px;
+            padding: 48px 24px;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .upload-area:hover {
+            border-color: #667eea;
+            background: #f8fafc;
+        }
+
+        .upload-area.dragover {
+            border-color: #667eea;
+            background: #e0e7ff;
+        }
+
+        .upload-icon {
+            font-size: 48px;
+            color: #64748b;
+            margin-bottom: 16px;
+        }
+
+        .upload-text {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1e293b;
+            margin-bottom: 8px;
+        }
+
+        .upload-hint {
+            color: #64748b;
+            font-size: 14px;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        /* Signal Display */
+        .signal-display {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 32px;
+            margin-bottom: 32px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            display: block;
+            min-height: 500px;
+            height: auto !important;
+            overflow: visible !important;
+        }
+
+        .signal-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
+        .info-card {
+            background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .info-label {
+            font-size: 12px;
+            color: #64748b;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .info-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1e293b;
+        }
+
+        /* Prediction Results */
+        .prediction-results {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 32px;
+            margin-bottom: 32px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            display: none;
+        }
+
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px;
+            margin-bottom: 32px;
+            align-items: stretch;
+        }
+
+        .result-card {
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            border-radius: 16px;
+            padding: 24px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+            min-height: 260px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .result-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+        }
+
+        .result-icon {
+            font-size: 32px;
+            margin-bottom: 16px;
+        }
+
+        .result-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 16px;
+        }
+
+        .result-value {
+            font-size: 40px;
+            font-weight: 900;
+            color: #667eea;
+            margin-bottom: 8px;
+        }
+
+        .result-unit {
+            font-size: 14px;
+            color: #64748b;
+            font-weight: 600;
+        }
+
+        .result-progress {
+            margin-top: 16px;
+        }
+
+        .progress-bar {
+            height: 8px;
+            background: #e2e8f0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            border-radius: 4px;
+            transition: width 0.8s ease;
+        }
+
+        .progress-label {
+            font-size: 12px;
+            color: #64748b;
+            font-weight: 500;
+        }
+
+        /* Buttons */
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:disabled {
+            background: #cbd5e1;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+        }
+
+        /* Loading */
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 32px;
+        }
+
+        .spinner {
+            border: 4px solid #e2e8f0;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 48px;
+            height: 48px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Messages */
+        .message {
+            padding: 16px 20px;
+            border-radius: 12px;
+            margin: 16px 0;
+            font-weight: 500;
+        }
+
+        .message.success {
+            background: #dcfce7;
+            color: #166534;
+            border: 1px solid #bbf7d0;
+        }
+
+        .message.error {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+        }
+
+        .message.info {
+            background: #dbeafe;
+            color: #1e40af;
+            border: 1px solid #bfdbfe;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .header-content {
+                flex-direction: column;
+                gap: 16px;
+            }
+
+            .nav-menu {
+                gap: 16px;
+            }
+
+            .main-container {
+                padding: 0 16px;
+                margin: 16px auto;
+            }
+
+            .target-selection,
+            .signal-upload,
+            .signal-display,
+            .prediction-results {
+                padding: 24px;
+            }
+
+            .target-grid {
+                grid-template-columns: 1fr;
+                gap: 16px;
+            }
+
+            .results-grid {
+                grid-template-columns: 1fr;
+                gap: 16px;
+            }
+
+            .signal-info {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 12px;
+            }
+
+            .upload-area {
+                padding: 32px 16px;
+            }
+
+            .result-value {
+                font-size: 28px;
+            }
+
+            /* Bluetooth responsive styles */
+            .bluetooth-header {
+                flex-direction: column;
+                gap: 12px;
+                align-items: stretch;
+            }
+
+            .bluetooth-status-container {
+                grid-template-columns: 1fr;
+                gap: 12px;
+            }
+
+            .bluetooth-controls {
+                flex-direction: column;
+                gap: 8px;
+            }
+
+            .bluetooth-controls .btn {
+                width: 100%;
+            }
+
+            .status-item {
+                flex-direction: column;
+                gap: 8px;
+                text-align: center;
+            }
+
+            .results-grid {
+                grid-template-columns: 1fr;
+                gap: 16px;
+            }
+            .result-card {
+                min-height: 180px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .logo {
+                font-size: 24px;
+            }
+
+            .nav-menu {
+                flex-direction: column;
+                gap: 8px;
+            }
+
+            .signal-info {
+                grid-template-columns: 1fr;
+            }
+
+            .upload-area {
+                padding: 24px 12px;
+            }
+
+            .upload-text {
+                font-size: 16px;
+            }
+
+            /* Bluetooth mobile styles */
+            .bluetooth-section {
+                padding: 16px;
+            }
+
+            .bluetooth-header h3 {
+                font-size: 16px;
+                text-align: center;
+            }
+
+            .bluetooth-status {
+                font-size: 11px;
+                padding: 3px 8px;
+            }
+
+            .bluetooth-info {
+                font-size: 12px;
+                padding: 10px 12px;
+            }
+
+            .status-label {
+                font-size: 12px;
+            }
+
+            .status-item {
+                padding: 10px 12px;
+            }
+        }
+
+        /* Chart Container */
+        #signalChart {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 24px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            width: 100% !important;
+            min-height: 350px;
+            height: 400px !important;
+            overflow: visible !important;
+            display: block;
+        }
+
+        /* Animation */
+        .fade-in {
+            animation: fadeIn 0.6s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        /* Bluetooth Section Styles */
+        .bluetooth-section {
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
+            border: 2px solid #e2e8f0;
+        }
+
+        .bluetooth-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .bluetooth-status-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: white;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .status-label {
+            font-weight: 600;
+            color: #64748b;
+            font-size: 13px;
+        }
+
+        .bluetooth-status {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .bluetooth-status.connected {
+            background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+            color: #166534;
+            border: 1px solid #86efac;
+        }
+
+        .bluetooth-status.connecting {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            color: #92400e;
+            border: 1px solid #fbbf24;
+        }
+
+        .bluetooth-status.error {
+            background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+            color: #991b1b;
+            border: 1px solid #f87171;
+        }
+
+        .bluetooth-status.disconnected {
+            background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+            color: #6b7280;
+            border: 1px solid #d1d5db;
+        }
+
+        .bluetooth-info {
+            background: white;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin: 12px 0;
+            font-size: 13px;
+            color: #64748b;
+            border: 1px solid #e2e8f0;
+            min-height: 20px;
+        }
+
+        .bluetooth-controls {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .divider {
+            text-align: center;
+            margin: 24px 0;
+            position: relative;
+        }
+
+        .divider::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: #e2e8f0;
+        }
+
+        .divider span {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 0 16px;
+            color: #64748b;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        /* Data Collection Progress */
+        .collection-progress {
+            background: white;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+            border: 1px solid #e2e8f0;
+        }
+
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .progress-title {
+            font-weight: 600;
+            color: #1e293b;
+            font-size: 14px;
+        }
+
+        .progress-percentage {
+            font-weight: 700;
+            color: #667eea;
+            font-size: 16px;
+        }
+
+        .progress-bar-container {
+            height: 8px;
+            background: #e2e8f0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+
+        /* Real-time Data Display */
+        .realtime-data {
+            background: white;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+            border: 1px solid #e2e8f0;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .data-header {
+            font-weight: 600;
+            color: #1e293b;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+
+        .data-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+            font-size: 12px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .data-item:last-child {
+            border-bottom: none;
+        }
+
+        .data-label {
+            color: #64748b;
+            font-weight: 500;
+        }
+
+        .data-value {
+            color: #1e293b;
+            font-weight: 600;
+        }
+
+        /* Composition Display */
+        .composition-display {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 16px;
+        }
+
+        .composition-item {
+            text-align: center;
+        }
+
+        .composition-label {
+            font-size: 12px;
+            color: #64748b;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .composition-value {
+            font-size: 16px;
+            font-weight: 700;
+            color: #1e293b;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">
+                🔬 UWB Signal Prediction
+            </div>
+            <nav>
+                <ul class="nav-menu">
+                    <li><a href="index.html">Home</a></li>
+                    <li><a href="signal-processing.html">Signal Processing</a></li>
+                    <li><a href="signal_prediction.html">Signal Prediction</a></li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <div class="main-container">
+        <!-- Target Selection -->
+        <div class="target-selection fade-in">
+            <h2 style="text-align: center; margin-bottom: 8px; color: #1e293b; font-size: 28px; font-weight: 700;">
+                Select Target Type
+            </h2>
+            <p style="text-align: center; color: #64748b; margin-bottom: 24px; font-size: 16px;">
+                Choose the type of target for signal analysis and thickness prediction
+            </p>
+            
+            <div class="target-grid">
+                <div class="target-card" data-target="oil-water">
+                    <span class="target-icon">💧</span>
+                    <div class="target-title">Oil-Water</div>
+                    <div class="target-description">
+                        Analyze oil-water mixture layers for thickness and composition ratio prediction
+                    </div>
+                </div>
+                
+                <div class="target-card" data-target="beef">
+                    <span class="target-icon">🥩</span>
+                    <div class="target-title">Beef</div>
+                    <div class="target-description">
+                        Analyze beef tissue layers for fat and muscle thickness prediction
+                    </div>
+                </div>
+                
+                <div class="target-card" data-target="pork">
+                    <span class="target-icon">🐷</span>
+                    <div class="target-title">Pork</div>
+                    <div class="target-description">
+                        Analyze pork tissue layers for fat and muscle thickness prediction
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Signal Upload -->
+        <div class="signal-upload fade-in" id="signalUpload" style="display: none;">
+            <h2 style="text-align: center; margin-bottom: 8px; color: #1e293b; font-size: 28px; font-weight: 700;">
+                Upload Signal File
+            </h2>
+            <p style="text-align: center; color: #64748b; margin-bottom: 24px; font-size: 16px;">
+                Upload your UWB signal data file or connect via Bluetooth for real-time data collection
+            </p>
+            
+            <!-- Bluetooth Connection Section -->
+            <div class="bluetooth-section">
+                <div class="bluetooth-header">
+                    <h3 style="color: #1e293b; font-size: 18px; font-weight: 600; margin-bottom: 16px;">
+                        🔗 Bluetooth Connection
+                    </h3>
+                    <button class="btn" id="bluetoothBtn">Connect Device</button>
+                </div>
+                
+                <div class="bluetooth-status-container">
+                    <div class="status-item">
+                        <span class="status-label">Connection Status:</span>
+                        <span id="bluetoothStatus" class="bluetooth-status">Disconnected</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Device Name:</span>
+                        <span id="deviceName">--</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Data Points:</span>
+                        <span id="dataPoints">0 / 601</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Current Voltage:</span>
+                        <span id="currentVoltage">-- V</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Current dB:</span>
+                        <span id="currentDb">-- dB</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Frequency Range:</span>
+                        <span id="freqRange">2.4-3.9 GHz</span>
+                    </div>
+                </div>
+                
+                <div id="bluetoothInfo" class="bluetooth-info"></div>
+                
+                <div class="bluetooth-controls" style="margin-top: 16px;">
+                    <button class="btn btn-secondary" id="startCollectionBtn" disabled>Start Collection</button>
+                    <button class="btn btn-secondary" id="stopCollectionBtn" disabled>Stop Collection</button>
+                    <button class="btn btn-secondary" id="clearDataBtn" disabled>Clear Data</button>
+                    <button class="btn btn-secondary" id="restartBtn" disabled>Restart ESP32</button>
+                    <button class="btn btn-secondary" id="resetCountBtn" disabled>Reset Count</button>
+                </div>
+            </div>
+            
+            <div class="divider">
+                <span>OR</span>
+            </div>
+            
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-icon">📁</div>
+                <div class="upload-text">Drop your signal file here</div>
+                <div class="upload-hint">or click to browse files</div>
+                <input type="file" id="fileInput" class="file-input" accept=".txt,.csv">
+            </div>
+            
+            <div style="text-align: center; margin-top: 24px;">
+                <button class="btn" id="predictBtn" disabled>Analyze Signal</button>
+                <button class="btn btn-secondary" id="clearBtn" style="margin-left: 12px;">Clear All</button>
+            </div>
+        </div>
+
+        <!-- Signal Display -->
+        <div class="signal-display fade-in" id="signalDisplay">
+            <h2 style="text-align: center; margin-bottom: 8px; color: #1e293b; font-size: 28px; font-weight: 700;">
+                Signal Analysis
+            </h2>
+            <p style="text-align: center; color: #64748b; margin-bottom: 24px; font-size: 16px;">
+                Detected signal characteristics and peak information
+            </p>
+            
+            <div class="signal-info">
+                <div class="info-card">
+                    <div class="info-label">Target Type</div>
+                    <div class="info-value" id="targetType">--</div>
+                </div>
+                <div class="info-card">
+                    <div class="info-label">Peak 1 Frequency</div>
+                    <div class="info-value" id="peak1Freq">-- GHz</div>
+                </div>
+                <div class="info-card">
+                    <div class="info-label">Peak 1 Magnitude</div>
+                    <div class="info-value" id="peak1Mag">-- dB</div>
+                </div>
+                <div class="info-card">
+                    <div class="info-label">Peak 2 Frequency</div>
+                    <div class="info-value" id="peak2Freq">-- GHz</div>
+                </div>
+                <div class="info-card">
+                    <div class="info-label">Peak 2 Magnitude</div>
+                    <div class="info-value" id="peak2Mag">-- dB</div>
+                </div>
+            </div>
+            
+            <div id="signalChart"></div>
+        </div>
+
+        <!-- Prediction Results -->
+        <div class="prediction-results fade-in" id="predictionResults">
+            <h2 style="text-align: center; margin-bottom: 8px; color: #1e293b; font-size: 28px; font-weight: 700;">
+                Prediction Results
+            </h2>
+            <p style="text-align: center; color: #64748b; margin-bottom: 24px; font-size: 16px;">
+                Thickness and composition ratio predictions based on signal analysis
+            </p>
+            
+            <div class="results-grid">
+                <div class="result-card">
+                    <div class="result-icon">🥓</div>
+                    <div class="result-title">Fat Thickness</div>
+                    <div class="result-value" id="fatThickness">0.0</div>
+                    <div class="result-unit">mm</div>
+                    <div class="result-progress">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="fatThicknessProgress" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="result-card">
+                    <div class="result-icon">💪</div>
+                    <div class="result-title">Muscle Thickness</div>
+                    <div class="result-value" id="muscleThickness">0.0</div>
+                    <div class="result-unit">mm</div>
+                    <div class="result-progress">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="muscleThicknessProgress" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="result-card">
+                    <div class="result-icon">⚖️</div>
+                    <div class="result-title">Ratio</div>
+                    <div class="result-value" id="ratio">0.0%</div>
+                    <div class="result-unit">Muscle%</div>
+                    <div class="result-progress">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="ratioProgress" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="composition-display">
+                <div class="composition-item">
+                    <span class="composition-label">Fat:</span>
+                    <span id="fatPercentage" class="composition-value">0%</span>
+                </div>
+                <div class="composition-item">
+                    <span class="composition-label">Muscle:</span>
+                    <span id="musclePercentage" class="composition-value">0%</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading -->
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p style="color: #64748b; font-weight: 500;">Processing signal data...</p>
+        </div>
+
+        <!-- Messages -->
+        <div id="messageContainer"></div>
+    </div>
+
+    <script>
+        let selectedTarget = '';
+        let signalData = null;
+        let peakData = null;
+        
+        // Bluetooth variables
+        let bluetoothDevice = null;
+        let bluetoothServer = null;
+        let bluetoothCharacteristic = null;
+        let isCollecting = false;
+        let collectedData = [];
+        let dataCollectionInterval = null;
+        let frequencyRange = [2.4e9, 3.9e9]; // 2.4-3.9 GHz (ESP32 frequency range)
+        let dataPoints = 601; // ESP32 sends 601 points
+        let currentFrequencyIndex = 0; // Track current frequency point
+        let voltageData = []; // Store raw voltage data
+        let dbData = []; // Store converted dB data
+
+        // Target selection
+        document.querySelectorAll('.target-card').forEach(card => {
+            card.addEventListener('click', function() {
+                // Remove previous selection
+                document.querySelectorAll('.target-card').forEach(c => c.classList.remove('selected'));
+                
+                // Add selection to clicked card
+                this.classList.add('selected');
+                selectedTarget = this.dataset.target;
+                
+                // Show upload section
+                document.getElementById('signalUpload').style.display = 'block';
+                document.getElementById('signalUpload').classList.add('fade-in');
+                
+                // Update target type display
+                document.getElementById('targetType').textContent = selectedTarget.charAt(0).toUpperCase() + selectedTarget.slice(1);
+                
+                showMessage(`Selected target: ${selectedTarget}`, 'info');
+            });
+        });
+
+        // Bluetooth connection functions
+        async function connectBluetooth() {
+            try {
+                // Check if Web Bluetooth API is supported
+                if (!navigator.bluetooth) {
+                    throw new Error('Web Bluetooth API is not supported in this browser');
+                }
+
+                // Check if Bluetooth is available
+                if (!navigator.bluetooth.getAvailability()) {
+                    throw new Error('Bluetooth is not available on this device');
+                }
+
+                updateBluetoothStatus('Connecting...', 'connecting');
+                updateBluetoothInfo('Requesting Bluetooth device...');
+
+                // Request Bluetooth device with ESP32 specific service
+                bluetoothDevice = await navigator.bluetooth.requestDevice({
+                    // ESP32 device filter
+                    filters: [
+                        {
+                            namePrefix: 'ESP32_Scanner'
+                        }
+                    ],
+                    optionalServices: [
+                        '4fafc201-1fb5-459e-8fcc-c5c9c331914b' // ESP32 service UUID
+                    ]
+                });
+
+                updateBluetoothInfo('Connecting to ESP32 device...');
+
+                // Connect to GATT server
+                bluetoothServer = await bluetoothDevice.gatt.connect();
+                updateBluetoothInfo('Connected to GATT server');
+
+                // Get the ESP32 service
+                const service = await bluetoothServer.getPrimaryService('4fafc201-1fb5-459e-8fcc-c5c9c331914b');
+
+                if (!service) {
+                    throw new Error('ESP32 service not found on device');
+                }
+
+                // Get the characteristic for reading data
+                bluetoothCharacteristic = await service.getCharacteristic('beb5483e-36e1-4688-b7f5-ea07361b26a8');
+
+                if (!bluetoothCharacteristic) {
+                    throw new Error('ESP32 characteristic not found on device');
+                }
+
+                // Enable notifications
+                await bluetoothCharacteristic.startNotifications();
+                bluetoothCharacteristic.addEventListener('characteristicvaluechanged', handleCharacteristicValueChanged);
+
+                // Listen for disconnection
+                bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+                updateBluetoothStatus('Connected', 'connected');
+                updateBluetoothInfo(`Connected to: ${bluetoothDevice.name || 'ESP32_Scanner'}`);
+                document.getElementById('deviceName').textContent = bluetoothDevice.name || 'ESP32_Scanner';
+                
+                // Enable collection buttons
+                document.getElementById('startCollectionBtn').disabled = false;
+                document.getElementById('clearDataBtn').disabled = false;
+                document.getElementById('restartBtn').disabled = false;
+                document.getElementById('resetCountBtn').disabled = false;
+                
+                // Update button text
+                document.getElementById('bluetoothBtn').textContent = 'Disconnect';
+
+            } catch (error) {
+                console.error('Bluetooth connection error:', error);
+                updateBluetoothStatus('Error', 'error');
+                updateBluetoothInfo(`Connection failed: ${error.message}`);
+                bluetoothDevice = null;
+                bluetoothServer = null;
+                bluetoothCharacteristic = null;
+            }
+        }
+
+        function disconnectBluetooth() {
+            if (bluetoothDevice && bluetoothDevice.gatt.connected) {
+                bluetoothDevice.gatt.disconnect();
+            }
+            onDisconnected();
+        }
+
+        function onDisconnected() {
+            bluetoothDevice = null;
+            bluetoothServer = null;
+            bluetoothCharacteristic = null;
+            
+            updateBluetoothStatus('Disconnected', 'disconnected');
+            updateBluetoothInfo('Device disconnected');
+            document.getElementById('deviceName').textContent = '--';
+            document.getElementById('bluetoothBtn').textContent = 'Connect Device';
+            
+            // Disable collection buttons
+            document.getElementById('startCollectionBtn').disabled = true;
+            document.getElementById('stopCollectionBtn').disabled = true;
+            document.getElementById('clearDataBtn').disabled = true;
+            document.getElementById('restartBtn').disabled = true;
+            document.getElementById('resetCountBtn').disabled = true;
+            
+            // Stop collection if active
+            if (isCollecting) {
+                stopDataCollection();
+            }
+        }
+
+        function updateBluetoothStatus(status, type) {
+            const statusElement = document.getElementById('bluetoothStatus');
+            statusElement.textContent = status;
+            
+            // Remove all status classes
+            statusElement.className = 'bluetooth-status';
+            
+            // Add new status class
+            switch (type) {
+                case 'connected':
+                    statusElement.classList.add('connected');
+                    break;
+                case 'connecting':
+                    statusElement.classList.add('connecting');
+                    break;
+                case 'error':
+                    statusElement.classList.add('error');
+                    break;
+                default: // disconnected
+                    statusElement.classList.add('disconnected');
+                    break;
+            }
+        }
+
+        function updateBluetoothInfo(info) {
+            document.getElementById('bluetoothInfo').textContent = info;
+        }
+
+        // Handle incoming Bluetooth data
+        function handleCharacteristicValueChanged(event) {
+            if (!isCollecting) return;
+            
+            const value = event.target.value;
+            const decoder = new TextDecoder('utf-8');
+            const data = decoder.decode(value);
+            
+            try {
+                // Parse ESP32 data format: "frequency voltage1 voltage2"
+                const lines = data.trim().split('\n');
+                
+                for (const line of lines) {
+                    const values = line.trim().split(/\s+/);
+                    if (values.length >= 3) {
+                        const frequency = parseFloat(values[0]);
+                        const voltage1 = parseFloat(values[1]);
+                        const voltage2 = parseFloat(values[2]);
+                        
+                        if (!isNaN(frequency) && !isNaN(voltage1) && !isNaN(voltage2)) {
+                            // Use average of two voltage readings
+                            const avgVoltage = (voltage1 + voltage2) / 2;
+                            
+                            // Convert voltage to dB (assuming reference voltage of 1V)
+                            const dbValue = 20 * Math.log10(avgVoltage);
+                            
+                            // Store data
+                            voltageData.push(avgVoltage);
+                            dbData.push(dbValue);
+                            collectedData.push({
+                                frequency: frequency,
+                                voltage: avgVoltage,
+                                magnitude: dbValue,
+                                timestamp: Date.now()
+                            });
+                            
+                            // Update display
+                            document.getElementById('dataPoints').textContent = collectedData.length + ' / 601';
+                            document.getElementById('currentVoltage').textContent = avgVoltage.toFixed(3) + ' V';
+                            document.getElementById('currentDb').textContent = dbValue.toFixed(2) + ' dB';
+                            updateBluetoothInfo(`Collected: ${avgVoltage.toFixed(3)}V → ${dbValue.toFixed(2)}dB @ ${(frequency/1e9).toFixed(2)}GHz`);
+                            
+                            // Check if collection is complete (ESP32 sends 601 points)
+                            if (collectedData.length >= 601) {
+                                stopDataCollection();
+                                break;
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error parsing ESP32 data:', error);
+                updateBluetoothInfo(`Data parsing error: ${data.substring(0, 50)}...`);
+            }
+        }
+
+        // Data collection functions
+        function startDataCollection() {
+            if (!bluetoothDevice || !bluetoothDevice.gatt.connected) {
+                showMessage('Please connect to a Bluetooth device first', 'error');
+                return;
+            }
+
+            isCollecting = true;
+            collectedData = [];
+            voltageData = [];
+            dbData = [];
+            currentFrequencyIndex = 0;
+            
+            document.getElementById('startCollectionBtn').disabled = true;
+            document.getElementById('stopCollectionBtn').disabled = false;
+            document.getElementById('clearDataBtn').disabled = true;
+            
+            updateBluetoothInfo('Starting ESP32 scan...');
+            
+            // Send start command to ESP32
+            sendCommandToDevice('START');
+            
+            showMessage('Data collection started', 'success');
+        }
+
+        function stopDataCollection() {
+            isCollecting = false;
+            
+            // Send stop command to ESP32
+            sendCommandToDevice('STOP');
+            
+            document.getElementById('startCollectionBtn').disabled = false;
+            document.getElementById('stopCollectionBtn').disabled = true;
+            document.getElementById('clearDataBtn').disabled = false;
+            
+            updateBluetoothInfo(`Data collection completed. Collected ${collectedData.length} points.`);
+            
+            if (collectedData.length > 0) {
+                processCollectedData();
+            }
+            
+            showMessage('Data collection stopped', 'info');
+        }
+
+        // Send command to ESP32 device
+        async function sendCommandToDevice(command) {
+            if (!bluetoothCharacteristic) return;
+            
+            try {
+                const encoder = new TextEncoder();
+                const commandData = encoder.encode(command);
+                await bluetoothCharacteristic.writeValue(commandData);
+                console.log(`Command sent to ESP32: ${command}`);
+            } catch (error) {
+                console.error('Error sending command to ESP32:', error);
+                updateBluetoothInfo(`Command error: ${error.message}`);
+            }
+        }
+
+        function processCollectedData() {
+            // Sort data by frequency
+            collectedData.sort((a, b) => a.frequency - b.frequency);
+            
+            // Extract frequency and magnitude arrays
+            const frequencies = collectedData.map(d => d.frequency);
+            const magnitudes = collectedData.map(d => d.magnitude);
+            
+            // Apply Savitzky-Golay filter
+            const s11Smooth = savgolFilter(magnitudes, 23, 3);
+            
+            // Find peaks using the same logic as file processing
+            const { minFrequencies, minS11Values } = findS11MinPeaks(frequencies, s11Smooth);
+            const { selectedFreqs, selectedVals } = extractTopNMinPeaksAfterThreshold(
+                minFrequencies, minS11Values, 2.0e9, 2
+            );
+            
+            if (selectedVals && selectedVals.length >= 2) {
+                // Create signal data object
+                signalData = {
+                    frequencies: frequencies,
+                    magnitudes: s11Smooth,
+                    peaks: selectedFreqs.map((freq, i) => ({
+                        frequency: freq,
+                        magnitude: selectedVals[i]
+                    }))
+                };
+                
+                // Store peak data for prediction
+                peakData = {
+                    freq1: selectedFreqs[1],
+                    mag1: selectedVals[1],
+                    freq2: selectedFreqs[0],
+                    mag2: selectedVals[0]
+                };
+                
+                // Display signal info and plot
+                displaySignalInfo();
+                document.getElementById('signalDisplay').style.display = 'block';
+                document.getElementById('signalDisplay').classList.add('fade-in');
+                
+                // Enable prediction button
+                document.getElementById('predictBtn').disabled = false;
+                
+                showMessage('Collected data processed successfully', 'success');
+
+                // Calculate and display percentages
+                let fatPercent = 0, musclePercent = 0;
+                if (peakData.ratio > 0) {
+                    fatPercent = 1 / (1 + peakData.ratio) * 100;
+                    musclePercent = peakData.ratio / (1 + peakData.ratio) * 100;
+                }
+                document.getElementById('fatPercentage').textContent = fatPercent.toFixed(1) + '%';
+                document.getElementById('musclePercentage').textContent = musclePercent.toFixed(1) + '%';
+            } else {
+                showMessage('Could not detect enough valleys in collected data', 'error');
+            }
+        }
+
+        function clearCollectedData() {
+            collectedData = [];
+            voltageData = [];
+            dbData = [];
+            currentFrequencyIndex = 0;
+            document.getElementById('dataPoints').textContent = '0 / 601';
+            document.getElementById('currentVoltage').textContent = '-- V';
+            document.getElementById('currentDb').textContent = '-- dB';
+            document.getElementById('clearDataBtn').disabled = true;
+            updateBluetoothInfo('Data cleared');
+            showMessage('Collected data cleared', 'info');
+        }
+
+        // Bluetooth event listeners
+        document.getElementById('bluetoothBtn').addEventListener('click', function() {
+            if (bluetoothDevice && bluetoothDevice.gatt.connected) {
+                disconnectBluetooth();
+            } else {
+                connectBluetooth();
+            }
+        });
+
+        document.getElementById('startCollectionBtn').addEventListener('click', startDataCollection);
+        document.getElementById('stopCollectionBtn').addEventListener('click', stopDataCollection);
+        document.getElementById('clearDataBtn').addEventListener('click', clearCollectedData);
+        document.getElementById('restartBtn').addEventListener('click', () => sendCommandToDevice('RESTART'));
+        document.getElementById('resetCountBtn').addEventListener('click', () => sendCommandToDevice('RESET_COUNT'));
+
+        // File upload handling
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+
+        uploadArea.addEventListener('click', loadSignalFile);
+        
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+        
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+        
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
+        
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        // File processing
+        async function handleFile(file) {
+            if (!file.name.endsWith('.txt') && !file.name.endsWith('.csv')) {
+                showMessage('请上传 .txt 或 .csv 文件', 'error');
+                return;
+            }
+            showLoading(true);
+            try {
+                const fileContent = await file.text();
+                // 1. 解析信号数据
+                const { commonFreqs, S11 } = para(fileContent);
+                if (commonFreqs.length === 0) throw new Error('文件中没有有效数据');
+                // 2. 平滑
+                const s11Smooth = savgolFilter(S11, 23, 3);
+                // 3. 检测谷值
+                const { minFrequencies, minS11Values } = findS11MinPeaks(commonFreqs, s11Smooth);
+                // 4. 提取2个主谷值
+                const { selectedFreqs, selectedVals } = extractTopNMinPeaksAfterThreshold(
+                    minFrequencies, minS11Values, 2.0e9, 2
+                );
+                if (!selectedVals || selectedVals.length < 2) throw new Error('未检测到足够的谷值');
+                // 5. 组装特征
+                signalData = {
+                    frequencies: commonFreqs,
+                    magnitudes: s11Smooth,
+                    peaks: selectedFreqs.map((freq, i) => ({
+                        frequency: freq,
+                        magnitude: selectedVals[i]
+                    }))
+                };
+                peakData = {
+                    freq1: selectedFreqs[1],
+                    mag1: selectedVals[1],
+                    freq2: selectedFreqs[0],
+                    mag2: selectedVals[0]
+                };
+                // 6. 显示峰值信息
+                document.getElementById('peak1Freq').textContent = (selectedFreqs[1] / 1e9).toFixed(2) + ' GHz';
+                document.getElementById('peak1Mag').textContent = selectedVals[1].toFixed(2) + ' dB';
+                document.getElementById('peak2Freq').textContent = (selectedFreqs[0] / 1e9).toFixed(2) + ' GHz';
+                document.getElementById('peak2Mag').textContent = selectedVals[0].toFixed(2) + ' dB';
+                // 7. 显示plot
+                document.getElementById('signalDisplay').style.display = 'block';
+                document.getElementById('signalDisplay').classList.add('fade-in');
+                plotSignalWithPeaks(commonFreqs, s11Smooth, selectedFreqs, selectedVals);
+                // 8. 启用预测按钮
+                document.getElementById('predictBtn').disabled = false;
+                showMessage('文件上传并处理成功', 'success');
+
+                // Calculate and display percentages
+                let fatPercent = 0, musclePercent = 0;
+                if (peakData.ratio > 0) {
+                    fatPercent = 1 / (1 + peakData.ratio) * 100;
+                    musclePercent = peakData.ratio / (1 + peakData.ratio) * 100;
+                }
+                document.getElementById('fatPercentage').textContent = fatPercent.toFixed(1) + '%';
+                document.getElementById('musclePercentage').textContent = musclePercent.toFixed(1) + '%';
+            } catch (error) {
+                showMessage('文件处理出错: ' + error.message, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function displaySignalInfo() {
+            if (signalData && signalData.peaks.length >= 2) {
+                const peak1 = signalData.peaks[0];
+                const peak2 = signalData.peaks[1];
+                
+                document.getElementById('peak1Freq').textContent = (peak1.frequency / 1e9).toFixed(2) + ' GHz';
+                document.getElementById('peak1Mag').textContent = peak1.magnitude.toFixed(2) + ' dB';
+                document.getElementById('peak2Freq').textContent = (peak2.frequency / 1e9).toFixed(2) + ' GHz';
+                document.getElementById('peak2Mag').textContent = peak2.magnitude.toFixed(2) + ' dB';
+                
+                // Plot signal
+                plotSignal();
+                
+                // Show voltage to dB conversion info
+                if (voltageData.length > 0) {
+                    const avgVoltage = voltageData.reduce((a, b) => a + b, 0) / voltageData.length;
+                    const avgDb = dbData.reduce((a, b) => a + b, 0) / dbData.length;
+                    updateBluetoothInfo(`Avg Voltage: ${avgVoltage.toFixed(3)}V → Avg dB: ${avgDb.toFixed(2)}dB`);
+                }
+            }
+        }
+
+        function plotSignal() {
+            if (!signalData) return;
+            
+            const trace = {
+                x: signalData.frequencies.map(f => f / 1e9), // Convert to GHz
+                y: signalData.magnitudes,
+                mode: 'lines',
+                name: 'S11 Signal (dB)',
+                line: { 
+                    color: '#667eea',
+                    width: 2
+                }
+            };
+            
+            const peakTrace = {
+                x: signalData.peaks.map(p => p.frequency / 1e9),
+                y: signalData.peaks.map(p => p.magnitude),
+                mode: 'markers',
+                name: 'Detected Peaks',
+                marker: { 
+                    color: '#ef4444', 
+                    size: 10, 
+                    symbol: 'diamond'
+                }
+            };
+            
+            // Add voltage trace if available
+            const traces = [trace, peakTrace];
+            
+            if (voltageData.length > 0) {
+                const voltageTrace = {
+                    x: signalData.frequencies.map(f => f / 1e9),
+                    y: voltageData,
+                    mode: 'lines',
+                    name: 'Voltage (V)',
+                    line: { 
+                        color: '#10b981',
+                        width: 2,
+                        dash: 'dot'
+                    },
+                    yaxis: 'y2'
+                };
+                traces.push(voltageTrace);
+            }
+            
+            const layout = {
+                title: {
+                    text: 'UWB Signal Analysis - Voltage to dB Conversion',
+                    font: { size: 18, color: '#1e293b' }
+                },
+                xaxis: { 
+                    title: 'Frequency (GHz)',
+                    gridcolor: '#e2e8f0'
+                },
+                yaxis: { 
+                    title: 'S11 (dB)',
+                    gridcolor: '#e2e8f0',
+                    side: 'left'
+                },
+                yaxis2: {
+                    title: 'Voltage (V)',
+                    gridcolor: '#e2e8f0',
+                    side: 'right',
+                    overlaying: 'y',
+                    position: 1
+                },
+                showlegend: true,
+                plot_bgcolor: 'white',
+                paper_bgcolor: 'white',
+                font: { color: '#374151' }
+            };
+            
+            Plotly.newPlot('signalChart', traces, layout, {responsive: true});
+            setTimeout(() => {
+                Plotly.Plots.resize('signalChart');
+            }, 200);
+        }
+
+        // Prediction function
+        document.getElementById('predictBtn').addEventListener('click', function() {
+            if (!peakData) {
+                showMessage('请先上传信号文件或采集数据', 'error');
+                return;
+            }
+            showLoading(true);
+            setTimeout(() => {
+                const predictions = predictThickness(peakData);
+                displayResults(predictions);
+                showLoading(false);
+            }, 1000);
+        });
+
+        // 1. 定义每个目标类型的本地 JS 模型函数
+        function porkFatThicknessModel(features) {
+            return Math.abs(features.mag1) * 0.4 + 2;
+        }
+        function porkRatioModel(features) {
+            return (Math.abs(features.mag2) / Math.abs(features.mag1)) + 1;
+        }
+        function porkMuscleThicknessModel(features) {
+            return Math.abs(features.mag2) * 0.7 + 3;
+        }
+        function oilFatThicknessModel(features) {
+            return Math.abs(features.mag1) * 0.5 + 1;
+        }
+        function oilRatioModel(features) {
+            return (Math.abs(features.mag2) / Math.abs(features.mag1)) + 0.5;
+        }
+        function oilMuscleThicknessModel(features) {
+            return Math.abs(features.mag2) * 0.8 + 2;
+        }
+        function beefFatThicknessModel(features) {
+            return Math.abs(features.mag1) * 0.3 + 1.5;
+        }
+        function beefRatioModel(features) {
+            return (Math.abs(features.mag2) / Math.abs(features.mag1)) + 0.8;
+        }
+        function beefMuscleThicknessModel(features) {
+            return Math.abs(features.mag2) * 0.6 + 2.5;
+        }
+        // 2. 用对象结构管理模型组
+        const models = {
+            'oil-water': {
+                fatThickness: model_output0_oil_predict,
+                ratio: model_output1_oil_predict,
+                muscleThickness: model_output2_oil_predict
+            },
+            'pork': {
+                fatThickness: model_output0_prok_predict,
+                ratio: model_output1_pork_predict,
+                muscleThickness: model_output2_pork_predict
+            },
+            'beef': {
+                fatThickness: beefFatThicknessModel,
+                ratio: beefRatioModel,
+                muscleThickness: beefMuscleThicknessModel
+            }
+        };
+        // 3. 预测时根据目标类型调用对应模型组
+        function predictThickness(peaks) {
+            const rawFeatures = [
+                peaks.freq1,
+                peaks.mag1,
+                peaks.freq2,
+                peaks.mag2
+            ];
+            // 1. 标准化
+            const scaledFeatures = x_scaler.transform(rawFeatures);
+
+            // 2. 送入模型
+            const fatPrediction = RF_MODEL_0.predict(scaledFeatures);
+            const ratioPrediction = RF_MODEL_1.predict(scaledFeatures);
+            const musclePrediction = RF_MODEL_2.predict(scaledFeatures);
+
+            // 3. 反标准化
+            const scaledOutputs = [fatPrediction, ratioPrediction, musclePrediction];
+            const finalResults = y_scaler.inverse_transform(scaledOutputs);
+
+            return {
+                fatThickness: finalResults[0],
+                ratio: finalResults[1],
+                muscleThickness: finalResults[2]
+            };
+        }
+        // 4. 显示结果时对应字段
+        function displayResults(predictions) {
+            animateValue('fatThickness', 0, predictions.fatThickness, 1000);
+            animateValue('muscleThickness', 0, predictions.muscleThickness, 1000);
+            // 计算muscle百分比
+            let fatPercent = 0, musclePercent = 0;
+            if (predictions.ratio > 0) {
+                fatPercent = 1 / (1 + predictions.ratio) * 100;
+                musclePercent = predictions.ratio / (1 + predictions.ratio) * 100;
+            }
+            // ratio主数值显示为muscle百分比
+            animateValuePercent('ratio', 0, musclePercent, 1000);
+            setTimeout(() => {
+                document.getElementById('fatThicknessProgress').style.width = `${Math.min(predictions.fatThickness / 20 * 100, 100)}%`;
+                document.getElementById('muscleThicknessProgress').style.width = `${Math.min(predictions.muscleThickness / 40 * 100, 100)}%`;
+                document.getElementById('ratioProgress').style.width = `${Math.min(musclePercent, 100)}%`;
+            }, 1000);
+            document.getElementById('predictionResults').style.display = 'block';
+            document.getElementById('predictionResults').classList.add('fade-in');
+            showMessage('Analysis completed successfully!', 'success');
+            // 百分比同步到下方
+            document.getElementById('fatPercentage').textContent = fatPercent.toFixed(1) + '%';
+            document.getElementById('musclePercentage').textContent = musclePercent.toFixed(1) + '%';
+        }
+
+        function animateValue(elementId, start, end, duration) {
+            const element = document.getElementById(elementId);
+            const startTime = performance.now();
+            
+            function update(currentTime) {
+                const elapsed = currentTime - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                
+                const current = start + (end - start) * progress;
+                element.textContent = current.toFixed(2);
+                
+                if (progress < 1) {
+                    requestAnimationFrame(update);
+                }
+            }
+            
+            requestAnimationFrame(update);
+        }
+
+        // 新增百分比动画
+        function animateValuePercent(elementId, start, end, duration) {
+            const element = document.getElementById(elementId);
+            const startTime = performance.now();
+            function update(currentTime) {
+                const elapsed = currentTime - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const current = start + (end - start) * progress;
+                element.textContent = current.toFixed(1) + '%';
+                if (progress < 1) {
+                    requestAnimationFrame(update);
+                }
+            }
+            requestAnimationFrame(update);
+        }
+
+        // Clear function
+        document.getElementById('clearBtn').addEventListener('click', function() {
+            selectedTarget = '';
+            signalData = null;
+            peakData = null;
+            
+            // Reset UI
+            document.querySelectorAll('.target-card').forEach(c => c.classList.remove('selected'));
+            document.getElementById('signalUpload').style.display = 'none';
+            document.getElementById('signalDisplay').style.display = 'none';
+            document.getElementById('predictionResults').style.display = 'none';
+            document.getElementById('predictBtn').disabled = true;
+            fileInput.value = '';
+            
+            // Clear Bluetooth data
+            if (isCollecting) {
+                stopDataCollection();
+            }
+            clearCollectedData();
+            
+            // Clear chart
+            const chartDiv = document.getElementById('signalChart');
+            if (chartDiv) {
+                chartDiv.innerHTML = '';
+            }
+            
+            showMessage('All data cleared', 'info');
+        });
+
+        // Utility functions
+        function showLoading(show) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+        }
+
+        function showMessage(message, type) {
+            const container = document.getElementById('messageContainer');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.textContent = message;
+            
+            container.appendChild(messageDiv);
+            
+            setTimeout(() => {
+                messageDiv.remove();
+            }, 5000);
+        }
+
+        // Check Bluetooth availability on page load
+        function checkBluetoothAvailability() {
+            if (navigator.bluetooth) {
+                navigator.bluetooth.getAvailability().then(available => {
+                    if (!available) {
+                        updateBluetoothStatus('Not Available', 'error');
+                        updateBluetoothInfo('Bluetooth is not available on this device');
+                        document.getElementById('bluetoothBtn').disabled = true;
+                    }
+                });
+            } else {
+                updateBluetoothStatus('Not Supported', 'error');
+                updateBluetoothInfo('Web Bluetooth API is not supported in this browser');
+                document.getElementById('bluetoothBtn').disabled = true;
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            showMessage('Welcome to UWB Signal Prediction! Select a target type to begin.', 'info');
+            checkBluetoothAvailability();
+        });
+
+        // 低通滤波器
+        function lowpassFilter(data, fs, cutoff = 1e9, order = 5) {
+            // 简化的低通滤波实现
+            const nyq = 0.5 * fs;
+            const normalCutoff = cutoff / nyq;
+            const windowSize = Math.floor(data.length / 20);
+            
+            const filtered = new Array(data.length).fill(0);
+            for (let i = 0; i < data.length; i++) {
+                let sum = 0;
+                let count = 0;
+                for (let j = Math.max(0, i - windowSize); j < Math.min(data.length, i + windowSize + 1); j++) {
+                    sum += data[j];
+                    count++;
+                }
+                filtered[i] = sum / count;
+            }
+            return filtered;
+        }
+
+        // 数据读取与S11计算
+        function para(fileContent) {
+            const frequencies = [];
+            const RI = [];
+            const R = [];
+            
+            const lines = fileContent.split('\n');
+            for (const line of lines) {
+                const values = line.trim().split(/\s+/);
+                if (values.length === 3) {
+                    const [x, y, z] = values.map(Number);
+                    if (!isNaN(x) && !isNaN(y) && !isNaN(z)) {
+                        frequencies.push(x);
+                        RI.push(y);
+                        R.push(z);
+                    }
+                }
+            }
+
+            // 过滤4.4GHz以下的频率
+            const mask = frequencies.map((f, i) => ({ f, i })).filter(item => item.f < 4.4e9);
+            const commonFreqs = mask.map(item => item.f);
+            const filteredRI = mask.map(item => RI[item.i]);
+            const filteredR = mask.map(item => R[item.i]);
+
+            // 应用低通滤波
+            const fs = 2 * Math.max(...commonFreqs);
+            const filteredRI_smooth = lowpassFilter(filteredRI, fs);
+            const filteredR_smooth = lowpassFilter(filteredR, fs);
+
+            // 计算复数形式
+            const complexRI = filteredRI_smooth.map((re, i) => {
+                const im = filteredR_smooth[i];
+                return { re, im };
+            });
+
+            // 计算幅值
+            const reflectionMagnitude = complexRI.map(c => Math.sqrt(c.re * c.re + c.im * c.im));
+            
+            // 计算S11
+            const S11 = reflectionMagnitude.map(mag => {
+                const value = 20 * Math.log10(Math.abs(mag));
+                return isFinite(value) ? value : 0;
+            });
+
+            return { commonFreqs, S11 };
+        }
+
+        // 寻找S11谷值
+        function findS11MinPeaks(freqs, s11Values, thresholdDb = -5) {
+            const freqRange = [2e9, 4.4e9];
+            const invertedS11 = s11Values.map(s => -s);
+            
+            // 查找局部最小值
+            const peaks = [];
+            for (let i = 1; i < invertedS11.length - 1; i++) {
+                if (invertedS11[i] > invertedS11[i-1] && 
+                    invertedS11[i] > invertedS11[i+1] && 
+                    invertedS11[i] > -thresholdDb) {
+                    peaks.push(i);
+                }
+            }
+            
+            const minFrequencies = peaks.map(i => freqs[i]);
+            const minS11Values = peaks.map(i => s11Values[i]);
+            
+            // 过滤频率范围
+            const mask = minFrequencies.map((f, i) => ({ f, i }))
+                .filter(item => item.f >= freqRange[0] && item.f <= freqRange[1]);
+            
+            return {
+                minFrequencies: mask.map(item => minFrequencies[item.i]),
+                minS11Values: mask.map(item => minS11Values[item.i])
+            };
+        }
+
+        // 提取2.0GHz之后最低2个S11谷值
+        function extractTopNMinPeaksAfterThreshold(peakFreqs, peakVals, threshold = 2.0e9, topN = 2, minFreqDiff = 100e6) {
+            const selected = peakFreqs.map((freq, i) => ({ freq, val: peakVals[i] }))
+                .filter(item => item.freq >= threshold);
+            
+            if (selected.length < topN) {
+                return { selectedFreqs: null, selectedVals: null };
+            }
+            
+            // 按S11值排序（最小值在前）
+            selected.sort((a, b) => a.val - b.val);
+            let result = selected.slice(0, topN);
+            
+            // 检查频率差异
+            if (Math.abs(result[0].freq - result[1].freq) < minFreqDiff) {
+                for (const candidate of selected.slice(topN)) {
+                    if (Math.abs(result[0].freq - candidate.freq) >= minFreqDiff) {
+                        result[1] = candidate;
+                        break;
+                    }
+                }
+            }
+            
+            return {
+                selectedFreqs: result.map(item => item.freq),
+                selectedVals: result.map(item => item.val)
+            };
+        }
+
+        // Savitzky-Golay滤波
+        function savgolFilter(array, windowSize, polyOrder) {
+            const halfWindow = Math.floor(windowSize / 2);
+            const filtered = new Array(array.length);
+            
+            for (let i = 0; i < array.length; i++) {
+                let sum = 0;
+                let count = 0;
+                for (let j = Math.max(0, i - halfWindow); j < Math.min(array.length, i + halfWindow + 1); j++) {
+                    sum += array[j];
+                    count++;
+                }
+                filtered[i] = sum / count;
+            }
+            return filtered;
+        }
+        // 绘制信号曲线和峰值
+        function plotSignalWithPeaks(frequencies, s11Values, peakFreqs, peakVals) {
+            console.log('plotSignalWithPeaks called');
+            console.log('frequencies length:', frequencies.length);
+            console.log('s11Values length:', s11Values.length);
+            console.log('peakFreqs:', peakFreqs);
+            console.log('peakVals:', peakVals);
+            
+            const chartDiv = document.getElementById('signalChart');
+            if (!chartDiv) {
+                console.error('signalChart div not found!');
+                return;
+            }
+            
+            const traceSignal = {
+                x: frequencies.map(f => f / 1e9), // 转为GHz
+                y: s11Values,
+                mode: 'lines',
+                name: 'S11 Signal',
+                line: { 
+                    color: '#3b82f6',
+                    width: 3
+                }
+            };
+            const tracePeaks = {
+                x: peakFreqs.map(f => f / 1e9),
+                y: peakVals,
+                mode: 'markers',
+                name: 'Detected Peaks',
+                marker: { 
+                    color: '#ef4444', 
+                    size: 14, 
+                    symbol: 'diamond',
+                    line: {
+                        color: '#ffffff',
+                        width: 2
+                    }
+                }
+            };
+            const layout = {
+                title: {
+                    text: 'S11 Signal & Detected Peaks',
+                    font: {
+                        size: 18,
+                        color: '#1e3a8a'
+                    }
+                },
+                xaxis: { 
+                    title: 'Frequency (GHz)',
+                    gridcolor: '#e8f2ff',
+                    zerolinecolor: '#e8f2ff'
+                },
+                yaxis: { 
+                    title: 'S11 (dB)',
+                    gridcolor: '#e8f2ff',
+                    zerolinecolor: '#e8f2ff'
+                },
+                showlegend: true,
+                plot_bgcolor: '#ffffff',
+                paper_bgcolor: '#ffffff',
+                font: {
+                    color: '#374151'
+                },
+                legend: {
+                    x: 0.02,
+                    y: 0.98,
+                    bgcolor: 'rgba(255,255,255,0.8)',
+                    bordercolor: '#e8f2ff'
+                }
+            };
+            
+            console.log('Creating plot with traces:', [traceSignal, tracePeaks]);
+            Plotly.newPlot('signalChart', [traceSignal, tracePeaks], layout, {responsive: true});
+            setTimeout(() => {
+                Plotly.Plots.resize('signalChart');
+            }, 200);
+            console.log('Plot created successfully');
+        }
+
+        // 文件加载逻辑修正
+        function loadSignalFile() {
+            if (!selectedTarget) {
+                showMessage('Please select a target type first!', 'error');
+                return;
+            }
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.txt,.csv';
+            input.onchange = function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    handleFile(file);
+                }
+            };
+            input.click();
+        }
+    </script>
+</body>
+</html> 
