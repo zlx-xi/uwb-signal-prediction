@@ -1446,7 +1446,7 @@
         // File processing
         async function handleFile(file) {
             if (!file.name.endsWith('.txt') && !file.name.endsWith('.csv')) {
-                showMessage('请上传 .txt 或 .csv 文件', 'error');
+                showMessage('Please upload a .txt or .csv file', 'error');
                 return;
             }
             showLoading(true);
@@ -1454,7 +1454,7 @@
                 const fileContent = await file.text();
                 // 1. 解析信号数据
                 const { commonFreqs, S11 } = para(fileContent);
-                if (commonFreqs.length === 0) throw new Error('文件中没有有效数据');
+                if (commonFreqs.length === 0) throw new Error('No valid data in the file');
                 // 2. 平滑
                 const s11Smooth = savgolFilter(S11, 23, 3);
                 // 3. 检测谷值
@@ -1463,7 +1463,7 @@
                 const { selectedFreqs, selectedVals } = extractTopNMinPeaksAfterThreshold(
                     minFrequencies, minS11Values, 2.0e9, 2
                 );
-                if (!selectedVals || selectedVals.length < 2) throw new Error('未检测到足够的谷值');
+                if (!selectedVals || selectedVals.length < 2) throw new Error('Not enough valleys detected');
                 // 5. 组装特征
                 signalData = {
                     frequencies: commonFreqs,
@@ -1490,7 +1490,7 @@
                 plotSignalWithPeaks(commonFreqs, s11Smooth, selectedFreqs, selectedVals);
                 // 8. 启用预测按钮
                 document.getElementById('predictBtn').disabled = false;
-                showMessage('文件上传并处理成功', 'success');
+                showMessage('File uploaded and processed successfully', 'success');
 
                 // Calculate and display percentages
                 let fatPercent = 0, musclePercent = 0;
@@ -1501,7 +1501,7 @@
                 document.getElementById('fatPercentage').textContent = fatPercent.toFixed(1) + '%';
                 document.getElementById('musclePercentage').textContent = musclePercent.toFixed(1) + '%';
             } catch (error) {
-                showMessage('文件处理出错: ' + error.message, 'error');
+                showMessage('File processing error: ' + error.message, 'error');
             } finally {
                 showLoading(false);
             }
@@ -1610,7 +1610,7 @@
         // Prediction function
         document.getElementById('predictBtn').addEventListener('click', function() {
             if (!peakData) {
-                showMessage('请先上传信号文件或采集数据', 'error');
+                showMessage('Please upload a signal file or collect data first', 'error');
                 return;
             }
             showLoading(true);
