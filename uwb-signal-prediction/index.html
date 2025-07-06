@@ -911,6 +911,7 @@
                     <button class="btn btn-secondary" id="startCollectionBtn" disabled>Start Collection</button>
                     <button class="btn btn-secondary" id="stopCollectionBtn" disabled>Stop Collection</button>
                     <button class="btn btn-secondary" id="clearDataBtn" disabled>Clear Data</button>
+                    <button class="btn btn-secondary" id="saveDataBtn" disabled>Save Data</button>
                     <button class="btn btn-secondary" id="restartBtn" disabled>Restart ESP32</button>
                     <button class="btn btn-secondary" id="resetCountBtn" disabled>Reset Count</button>
                 </div>
@@ -1092,7 +1093,7 @@
 
                 // Request Bluetooth device with ESP32 specific service
                 bluetoothDevice = await navigator.bluetooth.requestDevice({
-                    // ESP32 device filter
+                    // ESP32 device filter - 匹配 ble_connection_with_fre.ino 中的设备名称
                     filters: [
                         {
                             namePrefix: 'ESP32_Scanner'
@@ -1137,11 +1138,15 @@
                 // Enable collection buttons
                 document.getElementById('startCollectionBtn').disabled = false;
                 document.getElementById('clearDataBtn').disabled = false;
+                document.getElementById('saveDataBtn').disabled = false;
                 document.getElementById('restartBtn').disabled = false;
                 document.getElementById('resetCountBtn').disabled = false;
                 
                 // Update button text
                 document.getElementById('bluetoothBtn').textContent = 'Disconnect';
+                
+                // 显示ESP32连接成功信息
+                showMessage('ESP32 connected successfully! Device will start scanning when you click "Start Collection"', 'success');
 
             } catch (error) {
                 console.error('Bluetooth connection error:', error);
@@ -1220,42 +1225,68 @@
             const data = decoder.decode(value);
             
             try {
-                // Parse ESP32 data format: "frequency voltage1 voltage2"
+                // 解析ESP32数据格式: "FREQ:2.400,VOLT:1.2345,TIME:12345,SAMPLE:1,INDEX:0"
                 const lines = data.trim().split('\n');
                 
                 for (const line of lines) {
-                    const values = line.trim().split(/\s+/);
-                    if (values.length >= 3) {
-                        const frequency = parseFloat(values[0]);
-                        const voltage1 = parseFloat(values[1]);
-                        const voltage2 = parseFloat(values[2]);
+                    // 解析格式化的数据字符串
+                    const parts = line.split(',');
+                    if (parts.length >= 5) {
+                        let frequency = 0;
+                        let voltage = 0;
+                        let timestamp = 0;
+                        let sampleCount = 0;
+                        let freqIndex = 0;
                         
-                        if (!isNaN(frequency) && !isNaN(voltage1) && !isNaN(voltage2)) {
-                            // Use average of two voltage readings
-                            const avgVoltage = (voltage1 + voltage2) / 2;
+                        // 解析每个部分
+                        for (const part of parts) {
+                            const [key, value] = part.split(':');
+                            switch (key) {
+                                case 'FREQ':
+                                    frequency = parseFloat(value) * 1e9; // 转换为Hz
+                                    break;
+                                case 'VOLT':
+                                    voltage = parseFloat(value);
+                                    break;
+                                case 'TIME':
+                                    timestamp = parseInt(value);
+                                    break;
+                                case 'SAMPLE':
+                                    sampleCount = parseInt(value);
+                                    break;
+                                case 'INDEX':
+                                    freqIndex = parseInt(value);
+                                    break;
+                            }
+                        }
+                        
+                        if (!isNaN(frequency) && !isNaN(voltage)) {
+                            // 转换电压到dB (假设参考电压为1V)
+                            const dbValue = 20 * Math.log10(voltage);
                             
-                            // Convert voltage to dB (assuming reference voltage of 1V)
-                            const dbValue = 20 * Math.log10(avgVoltage);
-                            
-                            // Store data
-                            voltageData.push(avgVoltage);
+                            // 存储数据
+                            voltageData.push(voltage);
                             dbData.push(dbValue);
                             collectedData.push({
                                 frequency: frequency,
-                                voltage: avgVoltage,
+                                voltage: voltage,
                                 magnitude: dbValue,
-                                timestamp: Date.now()
+                                timestamp: timestamp,
+                                sampleCount: sampleCount,
+                                freqIndex: freqIndex
                             });
                             
-                            // Update display
+                            // 更新显示
                             document.getElementById('dataPoints').textContent = collectedData.length + ' / 601';
-                            document.getElementById('currentVoltage').textContent = avgVoltage.toFixed(3) + ' V';
+                            document.getElementById('currentVoltage').textContent = voltage.toFixed(3) + ' V';
                             document.getElementById('currentDb').textContent = dbValue.toFixed(2) + ' dB';
-                            updateBluetoothInfo(`Collected: ${avgVoltage.toFixed(3)}V → ${dbValue.toFixed(2)}dB @ ${(frequency/1e9).toFixed(2)}GHz`);
+                            updateBluetoothInfo(`Collected: ${voltage.toFixed(3)}V → ${dbValue.toFixed(2)}dB @ ${(frequency/1e9).toFixed(3)}GHz (Index: ${freqIndex})`);
                             
-                            // Check if collection is complete (ESP32 sends 601 points)
+                            // 检查是否收集完成 (ESP32发送601个点)
                             if (collectedData.length >= 601) {
                                 stopDataCollection();
+                                // 自动处理收集的数据
+                                processCollectedData();
                                 break;
                             }
                         }
@@ -1284,31 +1315,27 @@
             document.getElementById('stopCollectionBtn').disabled = false;
             document.getElementById('clearDataBtn').disabled = true;
             
-            updateBluetoothInfo('Starting ESP32 scan...');
+            updateBluetoothInfo('ESP32 will automatically start scanning 601 frequency points (2.4-3.9 GHz)');
             
-            // Send start command to ESP32
-            sendCommandToDevice('START');
-            
-            showMessage('Data collection started', 'success');
+            showMessage('Data collection started - ESP32 will automatically scan all frequencies', 'success');
         }
 
         function stopDataCollection() {
             isCollecting = false;
             
-            // Send stop command to ESP32
-            sendCommandToDevice('STOP');
-            
             document.getElementById('startCollectionBtn').disabled = false;
             document.getElementById('stopCollectionBtn').disabled = true;
             document.getElementById('clearDataBtn').disabled = false;
             
-            updateBluetoothInfo(`Data collection completed. Collected ${collectedData.length} points.`);
+            updateBluetoothInfo(`Data collection completed. Collected ${collectedData.length} points. Processing voltage to dB conversion...`);
             
             if (collectedData.length > 0) {
-                processCollectedData();
+                // 数据会在handleCharacteristicValueChanged中自动处理
+                // 当收集到601个点时
+                showMessage('Data collection stopped - Processing voltage to dB conversion', 'info');
+            } else {
+                showMessage('No data collected', 'error');
             }
-            
-            showMessage('Data collection stopped', 'info');
         }
 
         // Send command to ESP32 device
@@ -1320,21 +1347,153 @@
                 const commandData = encoder.encode(command);
                 await bluetoothCharacteristic.writeValue(commandData);
                 console.log(`Command sent to ESP32: ${command}`);
+                updateBluetoothInfo(`Command sent: ${command}`);
             } catch (error) {
                 console.error('Error sending command to ESP32:', error);
                 updateBluetoothInfo(`Command error: ${error.message}`);
             }
         }
 
+        // ESP32命令处理
+        function restartESP32() {
+            sendCommandToDevice('RESTART');
+            showMessage('Restart command sent to ESP32', 'info');
+        }
+
+        function resetCount() {
+            sendCommandToDevice('RESET_COUNT');
+            showMessage('Reset count command sent to ESP32', 'info');
+        }
+
+        // 数据保存功能
+        function saveCollectedData() {
+            if (collectedData.length === 0) {
+                showMessage('No data to save', 'error');
+                return;
+            }
+
+            // 创建保存选项
+            const saveOptions = [
+                { name: 'CSV File', action: saveAsCSV },
+                { name: 'JSON File', action: saveAsJSON },
+                { name: 'Raw Data', action: saveAsRaw }
+            ];
+
+            // 创建选择菜单
+            const menu = document.createElement('div');
+            menu.style.cssText = `
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: white;
+                border-radius: 12px;
+                padding: 24px;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+                z-index: 1000;
+                min-width: 300px;
+            `;
+
+            menu.innerHTML = `
+                <h3 style="margin-bottom: 16px; color: #1e293b;">Save Data As</h3>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    ${saveOptions.map(option => `
+                        <button class="btn" onclick="this.parentElement.parentElement.remove(); ${option.action.name}();" style="margin-bottom: 8px;">
+                            ${option.name}
+                        </button>
+                    `).join('')}
+                </div>
+                <button class="btn btn-secondary" onclick="this.parentElement.remove();" style="margin-top: 8px; width: 100%;">
+                    Cancel
+                </button>
+            `;
+
+            document.body.appendChild(menu);
+        }
+
+        function saveAsCSV() {
+            if (collectedData.length === 0) return;
+
+            // 创建CSV内容
+            const csvHeader = 'Frequency(GHz),Voltage(V),Magnitude(dB),Timestamp,SampleCount,Index\n';
+            const csvContent = collectedData.map(data => 
+                `${(data.frequency/1e9).toFixed(6)},${data.voltage.toFixed(6)},${data.magnitude.toFixed(6)},${data.timestamp},${data.sampleCount},${data.freqIndex}`
+            ).join('\n');
+
+            const csvData = csvHeader + csvContent;
+            downloadFile(csvData, `bluetooth_data_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.csv`, 'text/csv');
+            
+            showMessage('Data saved as CSV file', 'success');
+        }
+
+        function saveAsJSON() {
+            if (collectedData.length === 0) return;
+
+            // 创建JSON内容
+            const jsonData = {
+                metadata: {
+                    targetType: selectedTarget,
+                    collectionDate: new Date().toISOString(),
+                    totalPoints: collectedData.length,
+                    frequencyRange: {
+                        start: 2.4,
+                        end: 3.9,
+                        unit: 'GHz'
+                    },
+                    deviceInfo: {
+                        name: document.getElementById('deviceName').textContent,
+                        serviceUUID: '4fafc201-1fb5-459e-8fcc-c5c9c331914b',
+                        characteristicUUID: 'beb5483e-36e1-4688-b7f5-ea07361b26a8'
+                    }
+                },
+                data: collectedData,
+                processedData: {
+                    frequencies: collectedData.map(d => d.frequency),
+                    voltages: collectedData.map(d => d.voltage),
+                    magnitudes: collectedData.map(d => d.magnitude)
+                }
+            };
+
+            const jsonString = JSON.stringify(jsonData, null, 2);
+            downloadFile(jsonString, `bluetooth_data_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.json`, 'application/json');
+            
+            showMessage('Data saved as JSON file', 'success');
+        }
+
+        function saveAsRaw() {
+            if (collectedData.length === 0) return;
+
+            // 保存原始数据格式
+            const rawData = collectedData.map(data => 
+                `FREQ:${(data.frequency/1e9).toFixed(3)},VOLT:${data.voltage.toFixed(4)},TIME:${data.timestamp},SAMPLE:${data.sampleCount},INDEX:${data.freqIndex}`
+            ).join('\n');
+
+            downloadFile(rawData, `bluetooth_raw_data_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.txt`, 'text/plain');
+            
+            showMessage('Raw data saved as text file', 'success');
+        }
+
+        function downloadFile(content, filename, mimeType) {
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
         function processCollectedData() {
             // Sort data by frequency
             collectedData.sort((a, b) => a.frequency - b.frequency);
             
-            // Extract frequency and magnitude arrays
+            // Extract frequency and magnitude arrays (dB values)
             const frequencies = collectedData.map(d => d.frequency);
-            const magnitudes = collectedData.map(d => d.magnitude);
+            const magnitudes = collectedData.map(d => d.magnitude); // Already in dB
             
-            // Apply Savitzky-Golay filter
+            // Apply Savitzky-Golay filter to smooth the dB data
             const s11Smooth = savgolFilter(magnitudes, 23, 3);
             
             // Find peaks using the same logic as file processing
@@ -1344,10 +1503,10 @@
             );
             
             if (selectedVals && selectedVals.length >= 2) {
-                // Create signal data object
+                // Create signal data object with dB values
                 signalData = {
                     frequencies: frequencies,
-                    magnitudes: s11Smooth,
+                    magnitudes: s11Smooth, // dB values
                     peaks: selectedFreqs.map((freq, i) => ({
                         frequency: freq,
                         magnitude: selectedVals[i]
@@ -1370,7 +1529,7 @@
                 // Enable prediction button
                 document.getElementById('predictBtn').disabled = false;
                 
-                showMessage('Collected data processed successfully', 'success');
+                showMessage('Bluetooth data processed successfully - Voltage converted to dB', 'success');
 
                 // Calculate and display percentages
                 let fatPercent = 0, musclePercent = 0;
@@ -1380,6 +1539,14 @@
                 }
                 document.getElementById('fatPercentage').textContent = fatPercent.toFixed(1) + '%';
                 document.getElementById('musclePercentage').textContent = musclePercent.toFixed(1) + '%';
+                
+                // Automatically run prediction after processing
+                setTimeout(() => {
+                    if (document.getElementById('predictBtn').disabled === false) {
+                        document.getElementById('predictBtn').click();
+                    }
+                }, 1000);
+                
             } else {
                 showMessage('Could not detect enough valleys in collected data', 'error');
             }
@@ -1410,8 +1577,8 @@
         document.getElementById('startCollectionBtn').addEventListener('click', startDataCollection);
         document.getElementById('stopCollectionBtn').addEventListener('click', stopDataCollection);
         document.getElementById('clearDataBtn').addEventListener('click', clearCollectedData);
-        document.getElementById('restartBtn').addEventListener('click', () => sendCommandToDevice('RESTART'));
-        document.getElementById('resetCountBtn').addEventListener('click', () => sendCommandToDevice('RESET_COUNT'));
+        document.getElementById('restartBtn').addEventListener('click', () => restartESP32());
+        document.getElementById('resetCountBtn').addEventListener('click', () => resetCount());
 
         // File upload handling
         const uploadArea = document.getElementById('uploadArea');
@@ -1517,8 +1684,8 @@
                 document.getElementById('peak2Freq').textContent = (peak2.frequency / 1e9).toFixed(2) + ' GHz';
                 document.getElementById('peak2Mag').textContent = peak2.magnitude.toFixed(2) + ' dB';
                 
-                // Plot signal
-                plotSignal();
+                // Plot signal with both voltage and dB data
+                plotSignalWithBluetoothData();
                 
                 // Show voltage to dB conversion info
                 if (voltageData.length > 0) {
@@ -1529,7 +1696,7 @@
             }
         }
 
-        function plotSignal() {
+        function plotSignalWithBluetoothData() {
             if (!signalData) return;
             
             const trace = {
@@ -1576,7 +1743,7 @@
             
             const layout = {
                 title: {
-                    text: 'UWB Signal Analysis - Voltage to dB Conversion',
+                    text: 'UWB Signal Analysis - Bluetooth Data (Voltage → dB)',
                     font: { size: 18, color: '#1e293b' }
                 },
                 xaxis: { 
