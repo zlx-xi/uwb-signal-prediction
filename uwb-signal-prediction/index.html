@@ -1842,10 +1842,20 @@
                 peaks.freq2,
                 peaks.mag2
             ];
+            
+            // 新增：使用电压到损失转换（如果可用）
+            let enhancedFeatures = [...rawFeatures];
+            if (voltageData.length > 0) {
+                const avgVoltage = voltageData.reduce((a, b) => a + b, 0) / voltageData.length;
+                const predictedLoss = predictLossFromVoltage(avgVoltage);
+                enhancedFeatures.push(predictedLoss);
+                console.log(`Voltage: ${avgVoltage.toFixed(4)}V → Loss: ${predictedLoss.toFixed(2)}dB`);
+            }
+            
             // 1. 标准化
             const scaledFeatures = x_scaler.transform(rawFeatures);
 
-            // 2. 送入模型
+            // 2. 送入模型 - 改进预测逻辑
             const fatPrediction = RF_MODEL_0.predict(scaledFeatures);
             const ratioPrediction = RF_MODEL_1.predict(scaledFeatures);
             const musclePrediction = RF_MODEL_2.predict(scaledFeatures);
@@ -1854,14 +1864,62 @@
             const scaledOutputs = [fatPrediction, ratioPrediction, musclePrediction];
             const finalResults = y_scaler.inverse_transform(scaledOutputs);
 
+            // 4. 应用物理约束和差异化处理
+            let fatThickness = finalResults[0];
+            let ratio = finalResults[1];
+            let muscleThickness = finalResults[2];
+            
+            // 确保物理合理性
+            fatThickness = Math.max(0, Math.min(fatThickness, 50)); // 脂肪厚度 0-50mm
+            muscleThickness = Math.max(0, Math.min(muscleThickness, 100)); // 肌肉厚度 0-100mm
+            ratio = Math.max(0.1, Math.min(ratio, 10)); // 比例 0.1-10
+            
+            // 如果使用电压数据，调整预测结果
+            if (voltageData.length > 0) {
+                const avgVoltage = voltageData.reduce((a, b) => a + b, 0) / voltageData.length;
+                const voltageFactor = Math.max(0.5, Math.min(2.0, avgVoltage * 2)); // 电压影响因子
+                
+                // 根据电压调整预测结果
+                fatThickness *= voltageFactor;
+                muscleThickness *= (2 - voltageFactor); // 反向调整
+                ratio = Math.max(0.1, ratio * voltageFactor);
+                
+                console.log(`Voltage adjustment factor: ${voltageFactor.toFixed(2)}`);
+            }
+            
+            // 确保总厚度合理
+            const totalThickness = fatThickness + muscleThickness;
+            if (totalThickness > 80) {
+                const scale = 80 / totalThickness;
+                fatThickness *= scale;
+                muscleThickness *= scale;
+            }
+
             return {
-                fatThickness: finalResults[0],
-                ratio: finalResults[1],
-                muscleThickness: finalResults[2]
+                fatThickness: fatThickness,
+                ratio: ratio,
+                muscleThickness: muscleThickness
             };
         }
         // 4. 显示结果时对应字段
         function displayResults(predictions) {
+            // 显示详细的预测信息
+            console.log('=== 预测详细信息 ===');
+            console.log('输入特征:', peakData);
+            console.log('电压数据:', voltageData.length > 0 ? `平均电压: ${(voltageData.reduce((a, b) => a + b, 0) / voltageData.length).toFixed(4)}V` : '无电压数据');
+            console.log('预测结果:', predictions);
+            
+            // 在界面上显示预测信息
+            const predictionInfo = document.createElement('div');
+            predictionInfo.className = 'message info';
+            predictionInfo.innerHTML = `
+                <strong>预测详情:</strong><br>
+                峰值1: ${(peakData.freq1/1e9).toFixed(2)}GHz, ${peakData.mag1.toFixed(2)}dB<br>
+                峰值2: ${(peakData.freq2/1e9).toFixed(2)}GHz, ${peakData.mag2.toFixed(2)}dB<br>
+                ${voltageData.length > 0 ? `电压数据: ${(voltageData.reduce((a, b) => a + b, 0) / voltageData.length).toFixed(4)}V` : '无电压数据'}
+            `;
+            document.getElementById('messageContainer').appendChild(predictionInfo);
+            
             animateValue('fatThickness', 0, predictions.fatThickness, 1000);
             animateValue('muscleThickness', 0, predictions.muscleThickness, 1000);
             // 计算muscle百分比
