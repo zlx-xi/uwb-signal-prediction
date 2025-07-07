@@ -2227,6 +2227,15 @@
             };
             input.click();
         }
+
+        // S11损失预测函数（由Python拟合参数手动写入）
+        function predictLossFromVoltage(voltage) {
+            // Loss = a*V^2 + b*V + c
+            const a = 13310.8927;
+            const b = -5717.9077;
+            const c = 593.3911;
+            return a * voltage * voltage + b * voltage + c;
+        }
     </script>
 </body>
 </html> 
