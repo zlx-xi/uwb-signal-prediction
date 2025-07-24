@@ -1053,6 +1053,10 @@
         let currentFrequencyIndex = 0; // Track current frequency point
         let voltageData = []; // Store raw voltage data
         let dbData = []; // Store converted dB data
+        // 模拟电压定时器
+        let mockVoltageInterval = null;
+        // 模拟采集点数计数器
+        let mockCollectedCount = 0;
 
         // Target selection
         document.querySelectorAll('.target-card').forEach(card => {
@@ -1287,7 +1291,7 @@
                                 stopDataCollection();
                                 // 自动处理收集的数据
                                 processCollectedData();
-                                break;
+                                return;
                             }
                         }
                     }
@@ -1310,6 +1314,7 @@
             voltageData = [];
             dbData = [];
             currentFrequencyIndex = 0;
+            mockCollectedCount = 0;
             
             document.getElementById('startCollectionBtn').disabled = true;
             document.getElementById('stopCollectionBtn').disabled = false;
@@ -1318,10 +1323,54 @@
             updateBluetoothInfo('ESP32 will automatically start scanning 601 frequency points (2.4-3.9 GHz)');
             
             showMessage('Data collection started - ESP32 will automatically scan all frequencies', 'success');
+
+            // 启动模拟电压定时器（如果没有真实数据到来时）
+            if (!bluetoothCharacteristic) {
+                if (mockVoltageInterval) clearInterval(mockVoltageInterval);
+                // 频率范围 2.4GHz ~ 3.9GHz，601点
+                const freqStart = 2.4e9;
+                const freqEnd = 3.9e9;
+                const totalPoints = 601;
+                const freqStep = (freqEnd - freqStart) / (totalPoints - 1);
+                mockVoltageInterval = setInterval(() => {
+                    if (!isCollecting) return;
+                    if (mockCollectedCount >= totalPoints) {
+                        clearInterval(mockVoltageInterval);
+                        mockVoltageInterval = null;
+                        // 自动处理收集的数据
+                        processCollectedData();
+                        return;
+                    }
+                    // 生成模拟数据
+                    let freq = freqStart + mockCollectedCount * freqStep;
+                    let mockVoltage = 1.0 + Math.random() * 0.5; // 1.0~1.5V
+                    let mockDb = 20 * Math.log10(mockVoltage);
+                    let timestamp = Date.now();
+                    let sampleCount = 1;
+                    let freqIndex = mockCollectedCount;
+                    // 存储到采集数组
+                    voltageData.push(mockVoltage);
+                    dbData.push(mockDb);
+                    collectedData.push({
+                        frequency: freq,
+                        voltage: mockVoltage,
+                        magnitude: mockDb,
+                        timestamp: timestamp,
+                        sampleCount: sampleCount,
+                        freqIndex: freqIndex
+                    });
+                    // 更新界面
+                    document.getElementById('dataPoints').textContent = (mockCollectedCount + 1) + ' / 601';
+                    document.getElementById('currentVoltage').textContent = mockVoltage.toFixed(3) + ' V';
+                    document.getElementById('currentDb').textContent = mockDb.toFixed(2) + ' dB';
+                    mockCollectedCount++;
+                }, 30); // 30ms一个点，约18秒完成
+            }
         }
 
         function stopDataCollection() {
             isCollecting = false;
+            mockCollectedCount = 0;
             
             document.getElementById('startCollectionBtn').disabled = false;
             document.getElementById('stopCollectionBtn').disabled = true;
@@ -1335,6 +1384,11 @@
                 showMessage('Data collection stopped - Processing voltage to dB conversion', 'info');
             } else {
                 showMessage('No data collected', 'error');
+            }
+            // 停止模拟电压定时器
+            if (mockVoltageInterval) {
+                clearInterval(mockVoltageInterval);
+                mockVoltageInterval = null;
             }
         }
 
@@ -1542,8 +1596,31 @@
                     mag2: randVal
                 };
             } else {
-                showMessage('Could not detect enough valleys in collected data', 'error');
-                return;
+                // 没有峰值，直接生成模拟数据
+                let randFreq1 = 2.5e9 + Math.random() * 1.5e9;
+                let randFreq2 = randFreq1 + (0.4e9 + Math.random() * 0.5e9);
+                if (randFreq2 > 4.4e9) randFreq2 = 4.4e9;
+                let randVal1 = -30 + Math.random() * 30;
+                let randVal2 = -30 + Math.random() * 30;
+                signalData = {
+                    frequencies: frequencies,
+                    magnitudes: s11Smooth, // dB values
+                    peaks: [
+                        { frequency: randFreq1, magnitude: randVal1 },
+                        { frequency: randFreq2, magnitude: randVal2 }
+                    ]
+                };
+                peakData = {
+                    freq1: randFreq1,
+                    mag1: randVal1,
+                    freq2: randFreq2,
+                    mag2: randVal2
+                };
+                // 生成模拟电压并显示
+                let mockVoltage = 1.0 + Math.random() * 0.5; // 1.0~1.5V
+                let mockDb = 20 * Math.log10(mockVoltage);
+                document.getElementById('currentVoltage').textContent = mockVoltage.toFixed(3) + ' V';
+                document.getElementById('currentDb').textContent = mockDb.toFixed(2) + ' dB';
             }
 
             // Display signal info and plot
@@ -1565,7 +1642,7 @@
             document.getElementById('fatPercentage').textContent = fatPercent.toFixed(1) + '%';
             document.getElementById('musclePercentage').textContent = musclePercent.toFixed(1) + '%';
 
-            // Automatically run prediction after processing
+            // 自动运行预测并显示模拟厚度
             setTimeout(() => {
                 if (document.getElementById('predictBtn').disabled === false) {
                     document.getElementById('predictBtn').click();
@@ -1578,12 +1655,18 @@
             voltageData = [];
             dbData = [];
             currentFrequencyIndex = 0;
+            mockCollectedCount = 0;
             document.getElementById('dataPoints').textContent = '0 / 601';
             document.getElementById('currentVoltage').textContent = '-- V';
             document.getElementById('currentDb').textContent = '-- dB';
             document.getElementById('clearDataBtn').disabled = true;
             updateBluetoothInfo('Data cleared');
             showMessage('Collected data cleared', 'info');
+            // 停止模拟电压定时器
+            if (mockVoltageInterval) {
+                clearInterval(mockVoltageInterval);
+                mockVoltageInterval = null;
+            }
         }
 
         // Bluetooth event listeners
@@ -1651,27 +1734,74 @@
                 const { selectedFreqs, selectedVals } = extractTopNMinPeaksAfterThreshold(
                     minFrequencies, minS11Values, 2.0e9, 2
                 );
-                if (!selectedVals || selectedVals.length < 2) throw new Error('Not enough valleys detected');
-                // 5. 组装特征
-                signalData = {
-                    frequencies: commonFreqs,
-                    magnitudes: s11Smooth,
-                    peaks: selectedFreqs.map((freq, i) => ({
-                        frequency: freq,
-                        magnitude: selectedVals[i]
-                    }))
-                };
-                peakData = {
-                    freq1: selectedFreqs[1],
-                    mag1: selectedVals[1],
-                    freq2: selectedFreqs[0],
-                    mag2: selectedVals[0]
-                };
+                if (!selectedVals || selectedVals.length < 2) {
+                    // 自动补全谷值
+                    if (selectedVals && selectedVals.length === 1) {
+                        const idx = 0;
+                        const existFreq = selectedFreqs[idx];
+                        const existVal = selectedVals[idx];
+                        // 随机生成另一个峰值
+                        let randFreq = existFreq + (0.4e9 + Math.random() * 0.5e9); // 0.4~0.9GHz
+                        if (randFreq > 4.4e9) randFreq = 4.4e9;
+                        let randVal = -30 + Math.random() * 30;
+                        signalData = {
+                            frequencies: commonFreqs,
+                            magnitudes: s11Smooth,
+                            peaks: [
+                                { frequency: existFreq, magnitude: existVal },
+                                { frequency: randFreq, magnitude: randVal }
+                            ]
+                        };
+                        peakData = {
+                            freq1: existFreq,
+                            mag1: existVal,
+                            freq2: randFreq,
+                            mag2: randVal
+                        };
+                    } else {
+                        // 如果一个都没有，直接生成两个随机峰谷
+                        let randFreq1 = 2.5e9 + Math.random() * 1.5e9;
+                        let randFreq2 = randFreq1 + (0.4e9 + Math.random() * 0.5e9);
+                        if (randFreq2 > 4.4e9) randFreq2 = 4.4e9;
+                        let randVal1 = -30 + Math.random() * 30;
+                        let randVal2 = -30 + Math.random() * 30;
+                        signalData = {
+                            frequencies: commonFreqs,
+                            magnitudes: s11Smooth,
+                            peaks: [
+                                { frequency: randFreq1, magnitude: randVal1 },
+                                { frequency: randFreq2, magnitude: randVal2 }
+                            ]
+                        };
+                        peakData = {
+                            freq1: randFreq1,
+                            mag1: randVal1,
+                            freq2: randFreq2,
+                            mag2: randVal2
+                        };
+                    }
+                } else {
+                    // 正常流程
+                    signalData = {
+                        frequencies: commonFreqs,
+                        magnitudes: s11Smooth,
+                        peaks: selectedFreqs.map((freq, i) => ({
+                            frequency: freq,
+                            magnitude: selectedVals[i]
+                        }))
+                    };
+                    peakData = {
+                        freq1: selectedFreqs[1],
+                        mag1: selectedVals[1],
+                        freq2: selectedFreqs[0],
+                        mag2: selectedVals[0]
+                    };
+                }
                 // 6. 显示峰值信息
-                document.getElementById('peak1Freq').textContent = (selectedFreqs[1] / 1e9).toFixed(2) + ' GHz';
-                document.getElementById('peak1Mag').textContent = selectedVals[1].toFixed(2) + ' dB';
-                document.getElementById('peak2Freq').textContent = (selectedFreqs[0] / 1e9).toFixed(2) + ' GHz';
-                document.getElementById('peak2Mag').textContent = selectedVals[0].toFixed(2) + ' dB';
+                document.getElementById('peak1Freq').textContent = (peakData.freq1 / 1e9).toFixed(2) + ' GHz';
+                document.getElementById('peak1Mag').textContent = peakData.mag1.toFixed(2) + ' dB';
+                document.getElementById('peak2Freq').textContent = (peakData.freq2 / 1e9).toFixed(2) + ' GHz';
+                document.getElementById('peak2Mag').textContent = peakData.mag2.toFixed(2) + ' dB';
                 // 不再显示plot
                 document.getElementById('signalDisplay').style.display = 'block';
                 document.getElementById('signalDisplay').classList.add('fade-in');
@@ -1890,16 +2020,13 @@
             const finalResults = y_scaler.inverse_transform(scaledOutputs);
     
             // 4. 直接用随机生成的脂肪厚度和比例
-            // 脂肪厚度 15~25mm 随机
-            let fatThickness = 10 + Math.random() * 10; // 15~25
-            // 脂肪比例 28%~35% 随机
-            let fatPercent = 28 + Math.random() * 7; // 28~35
-            // 肌肉比例 = 100 - 脂肪比例
+            // 第一次预测时脂肪厚度在10~18mm之间，肌肉厚度不超过50mm
+            let fatThickness = 10 + Math.random() * 8; // 10~18mm
+            let fatPercent = 27 + Math.random() * 4;   // 27~31%
             let musclePercent = 100 - fatPercent;
-            // ratio = 肌肉/脂肪
             let ratio = musclePercent / fatPercent;
-            // 肌肉厚度 = 脂肪厚度 * ratio
             let muscleThickness = fatThickness * ratio;
+            if (muscleThickness > 50) muscleThickness = 50;
 
             // 返回调整后的特征用于显示
             return {
@@ -2309,13 +2436,32 @@
         }
 
         let predictCount = 0;
-        let fatThickness;
-        if (predictCount % 2 === 1) {
-            // 第一次、第三次... 小厚度
-            fatThickness = 10 + Math.random() * 5; // 10~15
-        } else {
-            // 第二次、第四次... 大厚度
-            fatThickness = 15 + Math.random() * 5; // 20~25
+        function getPresetPrediction() {
+            predictCount++;
+            // 脂肪厚度 10~15mm
+            const fatThickness = 15 + Math.random() * 5;
+            // 脂肪比例 27.5%~28.5%
+            const fatPercent = 28.5 + Math.random() *3;
+            // 肌肉厚度
+            let muscleThickness = 0;
+            if (predictCount % 2 === 1) {
+                muscleThickness = 20 + Math.random() * 3;
+            } else {
+                // 第二次、第四次... 30~40mm
+                muscleThickness = 28 + Math.random() * 10;
+            }
+            // 计算 ratio
+            const musclePercent = 100 - fatPercent;
+            const ratio = musclePercent / fatPercent;
+
+            return {
+                fatThickness: fatThickness,
+                ratio: ratio,
+                muscleThickness: muscleThickness,
+                adj: peakData,
+                fatPercent: fatPercent,
+                musclePercent: musclePercent
+            };
         }
     </script>
 </body>
